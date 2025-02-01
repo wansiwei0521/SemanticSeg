@@ -97,72 +97,96 @@ def cluster_hr_data(hr_data: np.ndarray, window_size: int = 10) -> Tuple[np.ndar
 
     return ranked_labels, labels
 
+CATEGORIES = [
+    "Person", "Bicycle", "Cyclist", "Car", "Motorcycle", "Motorcyclist",
+    "Bus", "Truck", "Traffic Light", "Animal", "Obstacle", "Pedestrian",
+    "Skater", "Scooter", "Emergency Vehicle", "Stroller", "Traffic Camera",
+    "Lane Control Sign", "Informational Sign", "Construction Sign", "Guide Sign",
+    "Warning Sign", "Regulatory Sign", "other sign", "Lane Control Signs",
+    "Informational Signs", "Construction Signs", "Guide Signs", "Warning Signs",
+    "Regulatory Signs", "other signs"
+]
+
 # LabelEncoder用于编码`class_name`属性
 class_encoder = LabelEncoder()
+class_encoder.fit(CATEGORIES)
 
-def encode_node_features(node_attr: dict) -> torch.Tensor:
+lane_encoder = LabelEncoder()
+lane_encoder.fit(["lane_front", "lane_left", "lane_right"])
+
+def encode_node_features(node_name: str, node_attr: dict) -> torch.Tensor:
     """
     将单个节点的属性转换为固定维度的特征向量。不同节点类型具有不同的特征提取逻辑。
+    feat = [node_type[4], center_3d[3], size_3d[3], speed[3], CTO[3], class[1], track[1], conf[1], entropy[4]]
     """
-    feature_dim = 12 + len(NODE_TYPE_MAP)  # 扩展特征维度，以容纳更多的属性
+    feature_dim = len(NODE_TYPE_MAP) + 19  # 扩展特征维度，以容纳更多的属性
     feat = np.zeros((feature_dim,), dtype=np.float32)
 
     # 根据 node_type 提取不同的特征
     node_type_str = node_attr.get("node_type", "other")
     
     if node_type_str == "ego_car":
+        # One-hot encoding for node type
+        feat[NODE_TYPE_MAP["ego_car"]] = 1.0
         # 特定于 ego_car 类型的特征
-        feat[0] = node_attr.get("speed", 0.0)  # speed
         center_3d = node_attr.get("center_3d", [0.0, 0.0, 0.0])  # center_3d
         for i in range(3):
-            feat[1 + i] = center_3d[i]
+            feat[4 + i] = center_3d[i]
         
-        # One-hot encoding for node type
-        feat[4 + NODE_TYPE_MAP["ego_car"]] = 1.0
+        feat[11] = node_attr.get("speed", 0.0)  # speed   
 
     elif node_type_str == "road":
-        # 特定于 road 类型的特征
-        feat[0] = node_attr.get("ComplexityLevel", 0.0)
-        feat[1] = node_attr.get("Tolerance", 0.0)
-        feat[2] = node_attr.get("Occlusion", 0.0)
-        
         # One-hot encoding for node type
-        feat[4 + NODE_TYPE_MAP["road"]] = 1.0
+        feat[NODE_TYPE_MAP["road"]] = 1.0
+        # 特定于 road 类型的特征
+        feat[13] = node_attr.get("ComplexityLevel", 0.0)
+        feat[14] = node_attr.get("Tolerance", 0.0)
+        feat[15] = node_attr.get("Occlusion", 0.0)
+        
 
     elif node_type_str == "lane":
-        # 特定于 lane 类型的特征
-        feat[0] = node_attr.get("Complexity", 0.0)
-        feat[1] = node_attr.get("Tolerance", 0.0)
-        feat[2] = node_attr.get("Occlusion", 0.0)
-        
         # One-hot encoding for node type
-        feat[4 + NODE_TYPE_MAP["lane"]] = 1.0
+        feat[NODE_TYPE_MAP["lane"]] = 1.0
+        # 特定于 lane 类型的特征
+        feat[13] = node_attr.get("Complexity", 0.0)
+        feat[14] = node_attr.get("Tolerance", 0.0)
+        feat[15] = node_attr.get("Occlusion", 0.0)
+        feat[16] = lane_encoder.transform([node_name])[0]
 
     elif node_type_str == "other":
-        # 特定于 other 类型的特征
-        feat[0] = node_attr.get("confidence", 0.0)  # confidence
+        # One-hot encoding for node type
+        feat[NODE_TYPE_MAP["other"]] = 1.0
+        
         center_3d = node_attr.get("center_3d", [0.0, 0.0, 0.0])  # center_3d
         for i in range(3):
-            feat[1 + i] = center_3d[i]
-        
-        # 对 class_name 进行编码
-        class_name = node_attr.get("class_name", "unknown")  # 默认为 "unknown"
-        class_idx = class_encoder.fit_transform([class_name])[0]  # 使用 LabelEncoder 编码
-        feat[4] = class_idx
+            feat[4 + i] = center_3d[i]
         
         # 提取 size_3d 属性
         size_3d = node_attr.get("size_3d", [0.0, 0.0, 0.0])
         for i in range(3):
-            feat[5 + i] = size_3d[i]
+            feat[7 + i] = size_3d[i]
+            
+        # 提取 speed 属性
+        speed_3d = node_attr.get("average_velocity_3d", [0.0, 0.0, 0.0])
+        for i in range(3):
+            feat[10 + i] = speed_3d[i]
+        
+        # 对 class_name 进行编码
+        class_name = node_attr.get("class_name", "unknown")  # 默认为 "unknown"
+        class_idx = class_encoder.transform([class_name])[0]  # 使用 LabelEncoder 编码
+        feat[16] = class_idx
+        
+        # 对 track_id 进行编码
+        feat[17] = node_attr.get("tracker_id", -1)
+            
+        # 特定于 other 类型的特征
+        feat[18] = node_attr.get("confidence", 0.0)  # confidence
         
         # 其他属性提取
-        feat[8] = node_attr.get("color_entropy", 0.0)
-        feat[9] = node_attr.get("brightness_entropy", 0.0)
-        feat[10] = node_attr.get("texture_entropy", 0.0)
-        feat[11] = node_attr.get("traffic_entropy", 0.0)
-
-        # One-hot encoding for node type
-        feat[12 + NODE_TYPE_MAP["other"]] = 1.0
+        feat[19] = node_attr.get("color_entropy", 0.0)
+        feat[20] = node_attr.get("brightness_entropy", 0.0)
+        feat[21] = node_attr.get("texture_entropy", 0.0)
+        feat[22] = node_attr.get("traffic_entropy", 0.0)
 
     return torch.tensor(feat, dtype=torch.float32)
 
@@ -192,7 +216,7 @@ def precompute_pyg_data(scenario_graphs: List[nx.Graph]) -> List[Data]:
     for g in scenario_graphs:
         nodes = list(g.nodes())
         node_idx_map = {n: j for j, n in enumerate(nodes)}
-        x_list = [encode_node_features(g.nodes[n]) for n in nodes]
+        x_list = [encode_node_features(n, g.nodes[n]) for n in nodes]
         x = torch.stack(x_list, dim=0)
 
         edge_index_list = []
@@ -209,7 +233,7 @@ def precompute_pyg_data(scenario_graphs: List[nx.Graph]) -> List[Data]:
             x=x.to(torch.float32),
             edge_index=edge_index.to(torch.long),
             edge_attr=edge_attr.to(torch.float32),
-            y=torch.tensor([0.0], dtype=torch.long)
+            y=torch.tensor([0], dtype=torch.long)
         )
         pyg_data_list.append(data)
     return pyg_data_list

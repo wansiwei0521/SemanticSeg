@@ -176,7 +176,7 @@ def train_model(model, train_loader, val_loader, optimizer, criterion, device, c
 
                     # 更新进度
                     epoch_loss += loss.item()
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5)
+                    # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5)
                     pbar.set_postfix({'loss': f"{loss.item():.4f}"})
                     torch.cuda.empty_cache()
 

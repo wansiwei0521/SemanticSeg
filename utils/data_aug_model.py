@@ -9,6 +9,7 @@ from tqdm import tqdm
 import signal  # 导入 signal 模块
 import os  # 导入 os 模块
 import torchmetrics
+import sys  # 导入 sys 模块
 
 
 
@@ -71,7 +72,7 @@ class Discriminator(nn.Module):
 
 
 # ------------------ 训练流程 ------------------
-def train_gan(dataloader, generator, discriminator, g_optimizer, d_optimizer, num_epochs, device, window_size, val_dataloader=None, checkpoint_path=None, scene_name=None):
+def train_gan(dataloader, generator, discriminator, g_optimizer, d_optimizer, num_epochs, device, window_size, val_dataloader=None, checkpoint_path=None, scene_name=None, num_classes=3, generator_model_path=None):
     adversarial_loss = nn.BCEWithLogitsLoss()
 
     best_val_metric = 0  # 初始化最佳验证指标,例如F1-score # 初始化最佳验证损失
@@ -114,7 +115,7 @@ def train_gan(dataloader, generator, discriminator, g_optimizer, d_optimizer, nu
             torch.save(checkpoint, default_checkpoint_path)
             print(f"检查点已保存至 {default_checkpoint_path}")
         print("退出程序")
-        # exit(0)
+        sys.exit(0)
 
     # 注册信号处理函数 (捕捉 SIGINT 信号，即 Ctrl+C)
     signal.signal(signal.SIGINT, signal_handler)
