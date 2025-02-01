@@ -76,7 +76,7 @@ class GraphEncoder(nn.Module):
         for idx, (conv, norm) in enumerate(zip(self.convs, self.norms)):
             residual = x
             out = conv(x, edge_index, edge_type, edge_attr)  # (N, hidden_dim)
-            out = norm(out, batch)  # BatchNorm1d 不需要额外的 batch 索引
+            out = norm(out)  # BatchNorm1d 不需要额外的 batch 索引
             out = F.relu(out + residual if idx > 0 else out)
             x = out
         
