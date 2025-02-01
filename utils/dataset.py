@@ -81,7 +81,7 @@ class ScenarioGraphDataset(Dataset):
         for i in range(0, len(precomputed_data) - window_size + 1, step_size):
             window_data = precomputed_data[i : i + window_size]
             window_label = labels[i + window_size - 1]
-            data_list.append((window_data, torch.tensor([window_label], dtype=torch.float32)))
+            data_list.append((window_data, window_label))
         return data_list
 
     def _save_to_cache(self):
@@ -118,7 +118,7 @@ class ScenarioGraphDataset(Dataset):
 
     def __getitem__(self, idx):
         window_graphs, window_label = self.data_list[idx]
-        return window_graphs, window_label
+        return Batch.from_data_list(window_graphs).to(self.device), torch.tensor(window_label,dtype=torch.long).to(self.device)
 
 
 class AugmentedScenarioGraphDataset(Dataset):

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch_geometric.nn import RGATConv, SAGPooling, LayerNorm
+from torch_geometric.nn import RGATConv, SAGPooling, LayerNorm, BatchNorm
 from torch_geometric.nn.aggr import SetTransformerAggregation
 
 class TemporalAttention(nn.Module):
@@ -60,7 +60,7 @@ class GraphEncoder(nn.Module):
                 )
             )
             
-            self.norms.append(LayerNorm(config.hidden_dim))
+            self.norms.append(BatchNorm(config.hidden_dim))
 
         self.pool = SAGPooling(config.hidden_dim, config.pool_ratio)
         self.aggr = SetTransformerAggregation(

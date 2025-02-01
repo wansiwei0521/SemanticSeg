@@ -103,8 +103,8 @@ def train_model(model, train_loader, val_loader, optimizer, criterion, device, c
     # 检查点路径处理
     os.makedirs(checkpoint_dir, exist_ok=True)
     os.makedirs(bestmodel_dir, exist_ok=True)
-    checkpoint_path = os.path.join(checkpoint_dir, f"{scene_name}_checkpoint.pth")
-    best_model_path = os.path.join(bestmodel_dir, f"{scene_name}_best_model.pth")
+    checkpoint_path = os.path.join(checkpoint_dir, f"{scene_name}_{config.window_size}_{config.step_size}_checkpoint.pth")
+    best_model_path = os.path.join(bestmodel_dir, f"{scene_name}_{config.window_size}_{config.step_size}_best_model.pth")
 
     # 加载现有检查点
     if os.path.exists(checkpoint_path):
