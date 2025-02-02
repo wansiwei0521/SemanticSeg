@@ -8,6 +8,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.data import Batch
 from tqdm import tqdm
+from collections import Counter
 
 
 class ModelConfig:
@@ -44,23 +45,23 @@ class ModelConfig:
         # 默认参数值
         self.num_layers = 3
         self.num_features = 16
-        self.hidden_dim = 64
+        self.hidden_dim = 32
         self.num_relations = 8
         self.edge_dim = 8
         
-        self.graph_num_head = 4
+        self.graph_num_head = 1
         self.pool_ratio = 0.8
-        self.num_seed_points = 3
-        self.graph_dropout = 0.2
+        self.num_seed_points = 4
+        self.graph_dropout = 0
         
-        self.window_size = 10
+        self.window_size = 30
         self.step_size = 1
-        self.lstm_hidden_dim = 64
-        self.lstm_bidirectional = True
+        self.lstm_hidden_dim = 32
+        self.lstm_bidirectional = False
         self.lstm_num_layers = 1
         
         self.num_classes = 3
-        self.fc_dropout = 0.3
+        self.fc_dropout = 0.1
 
         # 应用用户自定义参数
         for key, value in kwargs.items():
@@ -90,6 +91,7 @@ def train_model(model, train_loader, val_loader, optimizer, criterion, device, c
     :param patience: 早停耐心值
     """
     model.train()
+    torch.autograd.set_detect_anomaly(True)
     best_val_metric = {
         'accuracy': 0,
         'precision': 0,
@@ -103,8 +105,8 @@ def train_model(model, train_loader, val_loader, optimizer, criterion, device, c
     # 检查点路径处理
     os.makedirs(checkpoint_dir, exist_ok=True)
     os.makedirs(bestmodel_dir, exist_ok=True)
-    checkpoint_path = os.path.join(checkpoint_dir, f"{scene_name}_{config.window_size}_{config.step_size}_checkpoint.pth")
-    best_model_path = os.path.join(bestmodel_dir, f"{scene_name}_{config.window_size}_{config.step_size}_best_model.pth")
+    checkpoint_path = os.path.join(checkpoint_dir, f"{scene_name}_{config.window_size}_{config.step_size}_{config.num_layers}_{config.hidden_dim}_checkpoint.pth")
+    best_model_path = os.path.join(bestmodel_dir, f"{scene_name}_{config.window_size}_{config.step_size}_{config.num_layers}_{config.hidden_dim}_best_model.pth")
 
     # 加载现有检查点
     if os.path.exists(checkpoint_path):
@@ -168,6 +170,7 @@ def train_model(model, train_loader, val_loader, optimizer, criterion, device, c
 
                     # 计算损失
                     loss = criterion(outputs, batch_labels)
+                    loss = loss ** 2
                     # print(outputs)
                     
                     # 反向传播
@@ -296,3 +299,4 @@ class FocalLoss(nn.Module):
         pt = torch.exp(-ce_loss)  # 计算 p_t
         focal_loss = self.alpha * (1 - pt) ** self.gamma * ce_loss  # Focal Loss 计算公式
         return focal_loss.mean() if self.reduction == 'mean' else focal_loss.sum()
+    

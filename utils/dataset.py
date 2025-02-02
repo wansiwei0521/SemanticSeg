@@ -11,6 +11,7 @@ from torch_geometric.data import Data, Batch
 
 from utils.dataset_utils import cluster_hr_data, precompute_pyg_data
 from utils.data_aug_model import Generator
+from collections import Counter
 
 
 class ScenarioGraphDataset(Dataset):
@@ -119,6 +120,23 @@ class ScenarioGraphDataset(Dataset):
     def __getitem__(self, idx):
         window_graphs, window_label = self.data_list[idx]
         return Batch.from_data_list(window_graphs).to(self.device), torch.tensor(window_label,dtype=torch.long).to(self.device)
+    
+    def compute_class_weights(self):
+        # 假设 dataset 中每个样本的标签在 data.y 属性中，且为标量
+        labels = [int(label) for _, label in self.data_list]  
+        label_counter = Counter(labels)
+        
+        total_samples = len(self.data_list)
+        num_classes = len(label_counter)
+        
+        # 根据公式计算每个类别的权重
+        weights = {}
+        for label, count in label_counter.items():
+            weights[label] = total_samples / (num_classes * count)
+        
+        # 转换为 tensor，按照类别索引顺序排列
+        weight_list = [weights[i] for i in range(num_classes)]
+        return torch.tensor(weight_list, dtype=torch.float)
 
 
 class AugmentedScenarioGraphDataset(Dataset):
@@ -257,3 +275,20 @@ class AugmentedScenarioGraphDataset(Dataset):
         window_graphs, window_label = self.data_list[idx]
         # return window_graphs, window_label
         return Batch.from_data_list(window_graphs).to(self.device), torch.tensor(window_label,dtype=torch.long).to(self.device)
+    
+    def compute_class_weights(self):
+        # 假设 dataset 中每个样本的标签在 data.y 属性中，且为标量
+        labels = [int(label) for _, label in self.data_list]  
+        label_counter = Counter(labels)
+        
+        total_samples = len(self.data_list)
+        num_classes = len(label_counter)
+        
+        # 根据公式计算每个类别的权重
+        weights = {}
+        for label, count in label_counter.items():
+            weights[label] = total_samples / (num_classes * count)
+        
+        # 转换为 tensor，按照类别索引顺序排列
+        weight_list = [weights[i] for i in range(num_classes)]
+        return torch.tensor(weight_list, dtype=torch.float)

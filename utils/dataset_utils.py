@@ -117,9 +117,9 @@ lane_encoder.fit(["lane_front", "lane_left", "lane_right"])
 def encode_node_features(node_name: str, node_attr: dict) -> torch.Tensor:
     """
     将单个节点的属性转换为固定维度的特征向量。不同节点类型具有不同的特征提取逻辑。
-    feat = [node_type[4], center_3d[3], size_3d[3], speed[3], CTO[3], class[1], track[1], conf[1], entropy[4]]
+    new_feat = [node_type[4], speed[3], CTO[3], class[1], track[1], entropy[4]]
     """
-    feature_dim = len(NODE_TYPE_MAP) + 19  # 扩展特征维度，以容纳更多的属性
+    feature_dim = len(NODE_TYPE_MAP) + 12  # 扩展特征维度，以容纳更多的属性
     feat = np.zeros((feature_dim,), dtype=np.float32)
 
     # 根据 node_type 提取不同的特征
@@ -129,64 +129,48 @@ def encode_node_features(node_name: str, node_attr: dict) -> torch.Tensor:
         # One-hot encoding for node type
         feat[NODE_TYPE_MAP["ego_car"]] = 1.0
         # 特定于 ego_car 类型的特征
-        center_3d = node_attr.get("center_3d", [0.0, 0.0, 0.0])  # center_3d
-        for i in range(3):
-            feat[4 + i] = center_3d[i]
-        
-        feat[11] = node_attr.get("speed", 0.0)  # speed   
+        feat[5] = node_attr.get("speed", 0.0)  # speed   
 
     elif node_type_str == "road":
         # One-hot encoding for node type
         feat[NODE_TYPE_MAP["road"]] = 1.0
         # 特定于 road 类型的特征
-        feat[13] = node_attr.get("ComplexityLevel", 0.0)
-        feat[14] = node_attr.get("Tolerance", 0.0)
-        feat[15] = node_attr.get("Occlusion", 0.0)
+        feat[7] = node_attr.get("ComplexityLevel", 0.0)
+        feat[8] = node_attr.get("Tolerance", 0.0)
+        feat[9] = node_attr.get("Occlusion", 0.0)
         
 
     elif node_type_str == "lane":
         # One-hot encoding for node type
         feat[NODE_TYPE_MAP["lane"]] = 1.0
         # 特定于 lane 类型的特征
-        feat[13] = node_attr.get("Complexity", 0.0)
-        feat[14] = node_attr.get("Tolerance", 0.0)
-        feat[15] = node_attr.get("Occlusion", 0.0)
-        feat[16] = lane_encoder.transform([node_name])[0]
+        feat[7] = node_attr.get("Complexity", 0.0)
+        feat[8] = node_attr.get("Tolerance", 0.0)
+        feat[9] = node_attr.get("Occlusion", 0.0)
+        feat[10] = lane_encoder.transform([node_name])[0]
 
     elif node_type_str == "other":
         # One-hot encoding for node type
         feat[NODE_TYPE_MAP["other"]] = 1.0
-        
-        center_3d = node_attr.get("center_3d", [0.0, 0.0, 0.0])  # center_3d
-        for i in range(3):
-            feat[4 + i] = center_3d[i]
-        
-        # 提取 size_3d 属性
-        size_3d = node_attr.get("size_3d", [0.0, 0.0, 0.0])
-        for i in range(3):
-            feat[7 + i] = size_3d[i]
             
         # 提取 speed 属性
         speed_3d = node_attr.get("average_velocity_3d", [0.0, 0.0, 0.0])
         for i in range(3):
-            feat[10 + i] = speed_3d[i]
+            feat[4 + i] = speed_3d[i]
         
         # 对 class_name 进行编码
         class_name = node_attr.get("class_name", "unknown")  # 默认为 "unknown"
         class_idx = class_encoder.transform([class_name])[0]  # 使用 LabelEncoder 编码
-        feat[16] = class_idx
+        feat[10] = class_idx
         
         # 对 track_id 进行编码
-        feat[17] = node_attr.get("tracker_id", -1)
-            
-        # 特定于 other 类型的特征
-        feat[18] = node_attr.get("confidence", 0.0)  # confidence
+        feat[11] = node_attr.get("tracker_id", -1)
         
         # 其他属性提取
-        feat[19] = node_attr.get("color_entropy", 0.0)
-        feat[20] = node_attr.get("brightness_entropy", 0.0)
-        feat[21] = node_attr.get("texture_entropy", 0.0)
-        feat[22] = node_attr.get("traffic_entropy", 0.0)
+        feat[12] = node_attr.get("color_entropy", 0.0)
+        feat[13] = node_attr.get("brightness_entropy", 0.0)
+        feat[14] = node_attr.get("texture_entropy", 0.0)
+        feat[15] = node_attr.get("traffic_entropy", 0.0)
 
     return torch.tensor(feat, dtype=torch.float32)
 
@@ -199,7 +183,9 @@ def encode_edge_features(edge_attr: dict) -> torch.Tensor:
     feat = np.zeros((feature_dim,), dtype=np.float32)
 
     # 1) weight -> 索引 0
-    feat[0] = edge_attr.get("weight", 0.0)
+    weight = edge_attr.get("weight", 0.0)
+    weight_clipped = np.clip(weight, -500, 500)
+    feat[0] = 1 / (1 + np.exp(-weight_clipped))
 
     # 2) edge_type -> one-hot -> 索引 [1..7]
     edge_type_str = edge_attr.get("edge_type", "other_to_other")
