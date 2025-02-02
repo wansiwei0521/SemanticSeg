@@ -175,6 +175,7 @@ def train_model(model, train_loader, val_loader, optimizer, criterion, device, c
                     
                     # 反向传播
                     loss.backward()
+                    nn.utils.clip_grad_norm_(model.parameters(), max_norm=30, norm_type=2)
                     optimizer.step()
 
                     # 更新进度
