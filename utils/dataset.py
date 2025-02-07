@@ -12,6 +12,10 @@ from torch_geometric.data import Data, Batch
 from utils.dataset_utils import cluster_hr_data, precompute_pyg_data
 from utils.data_aug_model import Generator
 from collections import Counter
+from utils.dataset_utils import NODE_TYPE_MAP, EDGE_TYPE_MAP
+from utils.utils import ModelConfig
+from stnet.stnet import SpatioTemporalModel
+import re
 
 
 class ScenarioGraphDataset(Dataset):
@@ -140,7 +144,7 @@ class ScenarioGraphDataset(Dataset):
 
 
 class AugmentedScenarioGraphDataset(Dataset):
-    def __init__(self, root_dirs: List[str], window_size: int, step_size: int, generator_model_path: str, node_feature_dim: int, hidden_dim: int, num_classes:int, device: torch.device, cache_path: str = None):
+    def __init__(self, root_dirs: List[str], window_size: int, step_size: int, generator_model_path: str, node_feature_dim: int, num_classes:int, device: torch.device, cache_path: str = None):
         """
         初始化 AugmentedScenarioGraphDataset。
         """
@@ -160,7 +164,25 @@ class AugmentedScenarioGraphDataset(Dataset):
         else:
             print("未找到缓存文件，重新加载数据...")
             # 加载预训练的生成器模型
-            self.generator = Generator(node_feature_dim, hidden_dim, window_size, num_classes, dropout_rate=0.5).to(device)
+            # 从文件路径中提取文件名，再用正则表达式提取参数
+            model_basename = os.path.basename(generator_model_path)  # 例如 "ebike_30_1_2_16_best_model.pth"
+            pattern = r"([0-9]+)_([0-9]+)_([0-9]+)_([0-9]+)"
+            match = re.search(pattern, model_basename)
+            if match:
+                num_layers = int(match.group(3))
+                hidden_dim = int(match.group(4))
+                print(f"Extracted num_layers: {num_layers}, hidden_dim: {hidden_dim}")
+            else:
+                raise ValueError("模型文件名格式不正确")
+
+            config = ModelConfig(
+                num_layers=num_layers,
+                num_features=node_feature_dim,
+                hidden_dim=hidden_dim,
+                window_size=window_size,
+                step_size=step_size
+            )
+            self.generator = SpatioTemporalModel(config).to(device)
             state_dict = torch.load(generator_model_path, map_location=self.device, weights_only=False)
             self.generator.load_state_dict(state_dict)
             self.generator.eval()  # 切换到评估模式
@@ -219,11 +241,12 @@ class AugmentedScenarioGraphDataset(Dataset):
         :return: 生成的伪标签，一个整数。
         """
         # 将 window_graphs 移动到 self.device
-        window_graphs = [graph.to(self.device) for graph in window_graphs]
+        batch_data = Batch.from_data_list(window_graphs).to(self.device)
 
-        z = torch.randn(1, 64, device=self.device) # 生成一个batch_size=1的随机噪声
-
-        fake_labels = self.generator(window_graphs, z)
+        fake_labels, _ = self.generator(batch_data.x,
+                        batch_data.edge_index,
+                        batch_data.edge_attr,
+                        batch_data.batch)
         # 由于生成器现在返回的是多个标签的概率分布，我们需要取一个具有代表性的值
         # 这里取概率最大的类别的索引作为伪标签（你可以根据需要修改）
         fake_label = fake_labels.argmax(dim=1).squeeze(0).item()  # 添加 .item()

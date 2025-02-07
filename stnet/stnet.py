@@ -6,7 +6,7 @@ from torch_geometric.nn.aggr import SetTransformerAggregation
 
 class TemporalAttention(nn.Module):
     """时间注意力机制，增强时序特征提取"""
-    def __init__(self, hidden_dim, seg_len):
+    def __init__(self, hidden_dim):
         super().__init__()
         self.query = nn.Linear(hidden_dim, hidden_dim)
         self.key = nn.Linear(hidden_dim, hidden_dim)
@@ -77,7 +77,7 @@ class SpatioTemporalModel(nn.Module):
         
         # 时序模块
         temporal_dim = config.hidden_dim * config.num_seed_points
-        self.temporal_attn = TemporalAttention(temporal_dim, config.window_size)
+        self.temporal_attn = TemporalAttention(temporal_dim)
         self.lstm = nn.LSTM(
             input_size=temporal_dim,
             hidden_size=config.lstm_hidden_dim,

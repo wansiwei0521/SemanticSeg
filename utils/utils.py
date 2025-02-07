@@ -9,6 +9,7 @@ import torch.nn.functional as F
 from torch_geometric.data import Batch
 from tqdm import tqdm
 from collections import Counter
+import wandb
 
 
 class ModelConfig:
@@ -41,6 +42,10 @@ class ModelConfig:
         """
         # 训练参数
         self.num_epochs = 100
+        self.learning_rate = 1e-3
+        self.weight_decay = 1e-4
+        self.batch_size = 64
+        
         
         # 默认参数值
         self.num_layers = 3
@@ -77,7 +82,7 @@ class ModelConfig:
     
 def train_model(model, train_loader, val_loader, optimizer, criterion, device, config, checkpoint_dir, bestmodel_dir, scene_name, patience=10):
     """
-    优化后的训练函数
+    优化后的训练函数，增加了 wandb 记录训练过程
     
     :param model: 要训练的模型
     :param train_loader: 训练数据加载器
@@ -108,22 +113,22 @@ def train_model(model, train_loader, val_loader, optimizer, criterion, device, c
     checkpoint_path = os.path.join(checkpoint_dir, f"{scene_name}_{config.window_size}_{config.step_size}_{config.num_layers}_{config.hidden_dim}_checkpoint.pth")
     best_model_path = os.path.join(bestmodel_dir, f"{scene_name}_{config.window_size}_{config.step_size}_{config.num_layers}_{config.hidden_dim}_best_model.pth")
 
-    # 加载现有检查点
-    if os.path.exists(checkpoint_path):
-        checkpoint = torch.load(checkpoint_path)
-        model.load_state_dict(checkpoint['model_state_dict'])
-        optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        best_val_metric = checkpoint['best_val_metric']
-        start_epoch = checkpoint['epoch'] + 1
-        print(f"Loaded checkpoint from epoch {start_epoch}")
+    # # 加载现有检查点
+    # if os.path.exists(checkpoint_path):
+    #     checkpoint = torch.load(checkpoint_path)
+    #     model.load_state_dict(checkpoint['model_state_dict'])
+    #     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    #     best_val_metric = checkpoint['best_val_metric']
+    #     start_epoch = checkpoint['epoch'] + 1
+    #     print(f"Loaded checkpoint from epoch {start_epoch}")
 
-    # 信号处理优化
-    def _signal_handler(sig, frame):
-        print("\nInterrupt received, saving checkpoint...")
-        _save_checkpoint(epoch, force_save=True)
-        exit(0)
+    # # 信号处理优化
+    # def _signal_handler(sig, frame):
+    #     print("\nInterrupt received, saving checkpoint...")
+    #     _save_checkpoint(epoch, force_save=True)
+    #     exit(0)
 
-    signal.signal(signal.SIGINT, _signal_handler)
+    # signal.signal(signal.SIGINT, _signal_handler)
 
     # 检查点保存函数
     def _save_checkpoint(current_epoch, force_save=False):
@@ -171,7 +176,6 @@ def train_model(model, train_loader, val_loader, optimizer, criterion, device, c
                     # 计算损失
                     loss = criterion(outputs, batch_labels)
                     loss = loss ** 2
-                    # print(outputs)
                     
                     # 反向传播
                     loss.backward()
@@ -180,26 +184,37 @@ def train_model(model, train_loader, val_loader, optimizer, criterion, device, c
 
                     # 更新进度
                     epoch_loss += loss.item()
-                    # torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=5)
                     pbar.set_postfix({'loss': f"{loss.item():.4f}"})
                     torch.cuda.empty_cache()
 
             # 验证阶段
             val_metric = evaluate_model(model, val_loader, device, config.num_classes)
+            train_loss = epoch_loss / len(train_loader)
             print(
                 f"Epoch {epoch+1} | "
-                f"Train Loss: {epoch_loss/len(train_loader):.4f} | "
+                f"Train Loss: {train_loss:.4f} | "
                 f"Val Acc: {val_metric['accuracy']:.4f} | "
                 f"Val Prec: {val_metric['precision']:.4f} | "
                 f"Val Recall: {val_metric['recall']:.4f} | "
                 f"Val F1: {val_metric['f1']:.4f}"
             )
 
+            # wandb 记录
+            wandb.log({
+                'epoch': epoch+1,
+                'train_loss': train_loss,
+                'val_accuracy': val_metric['accuracy'],
+                'val_precision': val_metric['precision'],
+                'val_recall': val_metric['recall'],
+                'val_f1': val_metric['f1']
+            })
+
             # 早停机制
             if val_metric['accuracy'] > best_val_metric['accuracy']:
                 best_val_metric = val_metric
                 epochs_without_improvement = 0
                 torch.save(model.state_dict(), best_model_path)
+                wandb.run.summary["best_val_f1"] = val_metric['f1']
             else:
                 epochs_without_improvement += 1
                 if epochs_without_improvement >= patience:
@@ -213,6 +228,9 @@ def train_model(model, train_loader, val_loader, optimizer, criterion, device, c
         print("Training interrupted by user")
     finally:
         print(f"Best validation F1: {best_val_metric['f1']:.4f}")
+        _save_checkpoint(epoch, force_save=True)
+        wandb.finish()
+
 
 def evaluate_model(model, data_loader, device, num_classes):
     model.eval()
@@ -279,6 +297,14 @@ def evaluate_model(model, data_loader, device, num_classes):
     precision = precision_metric.compute().item()
     recall = recall_metric.compute().item()
     f1 = f1_metric.compute().item()
+    
+    # 使用wandb记录指标
+    wandb.log({
+        "validation_accuracy": accuracy,
+        "validation_precision": precision,
+        "validation_recall": recall,
+        "validation_f1": f1
+    })
 
     return {
         'accuracy': accuracy,

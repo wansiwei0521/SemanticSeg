@@ -128,3 +128,5 @@ dataset/
 # model
 model/
 
+#wandb
+wandb/
