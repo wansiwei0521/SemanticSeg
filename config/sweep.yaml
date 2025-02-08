@@ -1,4 +1,4 @@
-method: grid
+method: bayes
 name: hyperparameter-sweep-stnet
 
 metric:

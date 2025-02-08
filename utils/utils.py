@@ -80,7 +80,7 @@ class ModelConfig:
         params = "\n".join([f"{k:20} = {v}" for k,v in self.__dict__.items()])
         return f"ModelConfig:\n{params}"
     
-def train_model(model, train_loader, val_loader, optimizer, criterion, device, config, checkpoint_dir, bestmodel_dir, scene_name, patience=10):
+def train_model(model, train_loader, val_loader, optimizer, criterion, device, config, checkpoint_dir, bestmodel_dir, scene_name, patience=10, record_freq=5):
     """
     优化后的训练函数，增加了 wandb 记录训练过程
     
@@ -190,24 +190,6 @@ def train_model(model, train_loader, val_loader, optimizer, criterion, device, c
             # 验证阶段
             val_metric = evaluate_model(model, val_loader, device, config.num_classes)
             train_loss = epoch_loss / len(train_loader)
-            print(
-                f"Epoch {epoch+1} | "
-                f"Train Loss: {train_loss:.4f} | "
-                f"Val Acc: {val_metric['accuracy']:.4f} | "
-                f"Val Prec: {val_metric['precision']:.4f} | "
-                f"Val Recall: {val_metric['recall']:.4f} | "
-                f"Val F1: {val_metric['f1']:.4f}"
-            )
-
-            # wandb 记录
-            wandb.log({
-                'epoch': epoch+1,
-                'train_loss': train_loss,
-                'val_accuracy': val_metric['accuracy'],
-                'val_precision': val_metric['precision'],
-                'val_recall': val_metric['recall'],
-                'val_f1': val_metric['f1']
-            })
 
             # 早停机制
             if val_metric['accuracy'] > best_val_metric['accuracy']:
@@ -223,6 +205,39 @@ def train_model(model, train_loader, val_loader, optimizer, criterion, device, c
 
             # 保存检查点
             _save_checkpoint(epoch)
+            
+            # wandb 记录
+            wandb.log({
+                'epoch': epoch+1,
+                'train_loss': train_loss,
+                'val_accuracy': val_metric['accuracy'],
+                'val_precision': val_metric['precision'],
+                'val_recall': val_metric['recall'],
+                'val_f1': val_metric['f1'],
+                'balanced_accuracy': val_metric['balanced_accuracy'],
+                'cohen_kappa': val_metric['cohen_kappa'],
+                'matthews_corrcoef': val_metric['matthews_corrcoef'],
+                'best_val_accuracy': best_val_metric['accuracy'],
+                'best_val_precision': best_val_metric['precision'],
+                'best_val_recall': best_val_metric['recall'],
+                'best_val_f1': best_val_metric['f1'],
+                'best_balanced_accuracy': best_val_metric['balanced_accuracy'],
+                'best_cohen_kappa': best_val_metric['cohen_kappa'],
+                'best_matthews_corrcoef': best_val_metric['matthews_corrcoef']
+            })
+            
+            # 每五个 epoch 验证一次 train_loader 并记录评价指标
+            if (epoch + 1) % record_freq == 0:
+                train_metric = evaluate_model(model, train_loader, device, config.num_classes)
+                wandb.log({
+                    'train_accuracy': train_metric['accuracy'],
+                    'train_precision': train_metric['precision'],
+                    'train_recall': train_metric['recall'],
+                    'train_f1': train_metric['f1'],
+                    'train_balanced_accuracy': train_metric['balanced_accuracy'],
+                    'train_cohen_kappa': train_metric['cohen_kappa'],
+                    'train_matthews_corrcoef': train_metric['matthews_corrcoef']
+                })
 
     except KeyboardInterrupt:
         print("Training interrupted by user")
@@ -235,11 +250,11 @@ def train_model(model, train_loader, val_loader, optimizer, criterion, device, c
 def evaluate_model(model, data_loader, device, num_classes):
     model.eval()
     
-    # 根据需求，定义多个TorchMetrics实例
+    # 定义多分类评价指标
     acc_metric = torchmetrics.Accuracy(
         task="multiclass",
         num_classes=num_classes,
-        average="macro"    # 或者 "micro" / "weighted" / "none"
+        average="macro"
     ).to(device)
     
     precision_metric = torchmetrics.Precision(
@@ -259,6 +274,11 @@ def evaluate_model(model, data_loader, device, num_classes):
         num_classes=num_classes,
         average='macro'
     ).to(device)
+    
+    # 增加其他评价指标
+    balanced_acc_metric = torchmetrics.BalancedAccuracy(num_classes=num_classes).to(device)
+    cohen_kappa_metric = torchmetrics.CohenKappa(num_classes=num_classes).to(device)
+    matthews_corrcoef_metric = torchmetrics.MatthewsCorrCoef(num_classes=num_classes).to(device)
 
     with torch.no_grad():
         for batch_data, batch_labels in data_loader:
@@ -280,37 +300,38 @@ def evaluate_model(model, data_loader, device, num_classes):
             probs = F.softmax(outputs, dim=-1)
             preds = probs.argmax(dim=1)
 
-            # 处理标签维度，保证 preds 和 batch_labels 形状能对应
+            # 处理标签维度，确保 preds 和 batch_labels 可以对应
             batch_labels = batch_labels.squeeze()
             if batch_labels.dim() == 0:
                 batch_labels = batch_labels.unsqueeze(0)
             batch_labels = batch_labels.to(device)
 
-            # 更新各类metric
+            # 更新各个评价指标
             acc_metric.update(preds, batch_labels)
             precision_metric.update(preds, batch_labels)
             recall_metric.update(preds, batch_labels)
             f1_metric.update(preds, batch_labels)
+            balanced_acc_metric.update(preds, batch_labels)
+            cohen_kappa_metric.update(preds, batch_labels)
+            matthews_corrcoef_metric.update(preds, batch_labels)
 
-    # 计算并返回最终指标
+    # 计算最终评价指标
     accuracy = acc_metric.compute().item()
     precision = precision_metric.compute().item()
     recall = recall_metric.compute().item()
     f1 = f1_metric.compute().item()
+    balanced_accuracy = balanced_acc_metric.compute().item()
+    cohen_kappa = cohen_kappa_metric.compute().item()
+    matthews_corrcoef = matthews_corrcoef_metric.compute().item()
     
-    # 使用wandb记录指标
-    wandb.log({
-        "validation_accuracy": accuracy,
-        "validation_precision": precision,
-        "validation_recall": recall,
-        "validation_f1": f1
-    })
-
     return {
         'accuracy': accuracy,
         'precision': precision,
         'recall': recall,
-        'f1': f1
+        'f1': f1,
+        'balanced_accuracy': balanced_accuracy,
+        'cohen_kappa': cohen_kappa,
+        'matthews_corrcoef': matthews_corrcoef
     }
 
 
