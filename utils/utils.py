@@ -10,6 +10,8 @@ from torch_geometric.data import Batch
 from tqdm import tqdm
 from collections import Counter
 import wandb
+from sklearn.metrics import balanced_accuracy_score
+import torch
 
 
 class ModelConfig:
@@ -79,6 +81,19 @@ class ModelConfig:
         """可视化配置参数的展示形式"""
         params = "\n".join([f"{k:20} = {v}" for k,v in self.__dict__.items()])
         return f"ModelConfig:\n{params}"
+
+class SklearnBalancedAccuracy:
+        def __init__(self):
+            self.all_preds = []
+            self.all_labels = []
+            
+        def update(self, preds, labels):
+            self.all_preds.extend(preds.detach().cpu().numpy().tolist())
+            self.all_labels.extend(labels.detach().cpu().numpy().tolist())
+        
+        def compute(self):
+            score = balanced_accuracy_score(self.all_labels, self.all_preds)
+            return torch.tensor(score)
     
 def train_model(model, train_loader, val_loader, optimizer, criterion, device, config, checkpoint_dir, bestmodel_dir, scene_name, patience=10, record_freq=5):
     """
@@ -275,10 +290,10 @@ def evaluate_model(model, data_loader, device, num_classes):
         average='macro'
     ).to(device)
     
-    # 增加其他评价指标
-    balanced_acc_metric = torchmetrics.BalancedAccuracy(num_classes=num_classes).to(device)
-    cohen_kappa_metric = torchmetrics.CohenKappa(num_classes=num_classes).to(device)
-    matthews_corrcoef_metric = torchmetrics.MatthewsCorrCoef(num_classes=num_classes).to(device)
+    # 使用sklearn的balanced_accuracy_score替代torchmetrics版本，定义一个自定义累积器
+    balanced_acc_metric = SklearnBalancedAccuracy()
+    cohen_kappa_metric = torchmetrics.CohenKappa(task="multiclass", num_classes=num_classes).to(device)
+    matthews_corrcoef_metric = torchmetrics.MatthewsCorrCoef(task="multiclass", num_classes=num_classes).to(device)
 
     with torch.no_grad():
         for batch_data, batch_labels in data_loader:
