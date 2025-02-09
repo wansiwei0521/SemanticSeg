@@ -19,11 +19,12 @@ import re
 
 
 class ScenarioGraphDataset(Dataset):
-    def __init__(self, root_dirs: List[str], window_size: int, step_size: int, device: torch.device, cache_path: str = None):
+    def __init__(self, root_dirs: List[str], config: ModelConfig, device: torch.device, cache_path: str = None):
         super().__init__()
         self.root_dirs = root_dirs
-        self.window_size = window_size
-        self.step_size = step_size
+        self.config = config
+        self.window_size = config.window_size
+        self.step_size = config.step_size
         self.device = device
         self.cache_path = cache_path
         self.data_list = []
@@ -59,7 +60,7 @@ class ScenarioGraphDataset(Dataset):
 
                     labels_df = pd.read_csv(tag_file_full).dropna(subset=["HR"])
                     window_size_cls = 5
-                    ranked_labels, _ = cluster_hr_data(np.array(labels_df["HR"]), window_size_cls)
+                    ranked_labels, _ = cluster_hr_data(np.array(labels_df["HR"]), window_size_cls, num_classes=self.config.num_classes)
 
                     if len(scenario_graphs) > len(ranked_labels):
                         print(f"[Warning] 图和标签数量不匹配, 裁剪: {scenario_file_full}")

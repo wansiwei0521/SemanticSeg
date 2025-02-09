@@ -50,7 +50,7 @@ def calculate_rolling_std(hr_data: np.ndarray, window_size: int) -> np.ndarray:
     return pd.Series(hr_data).rolling(window=window_size).std().dropna().values
 
 # 计算所有特征并进行KMeans++聚类
-def cluster_hr_data(hr_data: np.ndarray, window_size: int = 10) -> Tuple[np.ndarray, np.ndarray]:
+def cluster_hr_data(hr_data: np.ndarray, window_size: int = 10, num_classes: int = 3) -> Tuple[np.ndarray, np.ndarray]:
     """
     对心率数据进行特征提取、标准化、KMeans 聚类，并对各簇的均值进行排序和标记。
     
@@ -79,7 +79,7 @@ def cluster_hr_data(hr_data: np.ndarray, window_size: int = 10) -> Tuple[np.ndar
     features = scaler.fit_transform(features)
 
     # 使用KMeans++进行聚类
-    kmeans = KMeans(n_clusters=3, init='k-means++', n_init='auto', random_state=42)
+    kmeans = KMeans(n_clusters=num_classes, init='k-means++', n_init='auto', random_state=42)
     labels = kmeans.fit_predict(features)
 
     # 计算每个簇的心率均值
