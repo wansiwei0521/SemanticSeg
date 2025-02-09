@@ -13,7 +13,7 @@ parameters:
   graph_num_head:
     values: [1, 2, 4]
   pool_ratio:
-    values: [0.3, 0.5, 0.7]
+    values: [0.5, 0.7, 0.9]
   window_size:
     values: [10, 30, 50]
   lstm_hidden_dim:
