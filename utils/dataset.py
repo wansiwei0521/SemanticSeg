@@ -167,12 +167,13 @@ class AugmentedScenarioGraphDataset(Dataset):
             # 加载预训练的生成器模型
             # 从文件路径中提取文件名，再用正则表达式提取参数
             model_basename = os.path.basename(generator_model_path)  # 例如 "ebike_30_1_2_16_best_model.pth"
-            pattern = r"([0-9]+)_([0-9]+)_([0-9]+)_([0-9]+)"
+            pattern = r"([0-9]+)_([0-9]+)_([0-9]+)_([0-9]+)_([0-9]+)"
             match = re.search(pattern, model_basename)
             if match:
                 num_layers = int(match.group(3))
                 hidden_dim = int(match.group(4))
-                print(f"Extracted num_layers: {num_layers}, hidden_dim: {hidden_dim}")
+                num_classes = int(match.group(5))
+                print(f"Extracted num_layers: {num_layers}, hidden_dim: {hidden_dim},num_classes: {num_classes}")
             else:
                 raise ValueError("模型文件名格式不正确")
 
@@ -181,7 +182,8 @@ class AugmentedScenarioGraphDataset(Dataset):
                 num_features=node_feature_dim,
                 hidden_dim=hidden_dim,
                 window_size=window_size,
-                step_size=step_size
+                step_size=step_size,
+                num_classes=num_classes
             )
             self.generator = SpatioTemporalModel(config).to(device)
             state_dict = torch.load(generator_model_path, map_location=self.device, weights_only=False)

@@ -14,27 +14,17 @@ parameters:
     values: [1, 2, 4]
   pool_ratio:
     values: [0.3, 0.5, 0.7]
-  num_seed_points:
-    values: [4]
-  graph_dropout:
-    values: [0.3, 0.5, 0.7]
   window_size:
     values: [10, 30, 50]
-  step_size:
-    value: [1]
   lstm_hidden_dim:
     values: [8, 16, 32]
   lstm_bidirectional:
     values: [true, false] 
   lstm_num_layers:
     values: [1, 2, 3]
-  num_classes:
-    value: [3]
   fc_dropout:
     values: [0.3, 0.5, 0.7]
   learning_rate:
     values: [0.001, 0.01, 0.1]
   weight_decay:
     values: [0.0001, 0.001, 0.01]
-  batch_size:
-    values: [16]
