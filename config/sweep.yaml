@@ -2,7 +2,7 @@ method: bayes
 name: hyperparameter-sweep-stnet
 
 metric:
-  name: accuracy
+  name: best_val_f1
   goal: maximize
 
 parameters:
