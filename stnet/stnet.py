@@ -107,6 +107,9 @@ class SpatioTemporalModel(nn.Module):
         )
 
     def forward(self, x, edge_index, edge_attr, batch):
+        # 如果 edge_index 的第一维不是2，则尝试进行转置edge_index 的第一维不是2，则尝试进行转置
+        if edge_index.dim() == 2 and edge_index.size(0) != 2:
+            edge_index = edge_index.t().contiguous()
         # 图编码
         graph_feats, batch = self.graph_encoder(x, edge_index, edge_attr, batch)
         
