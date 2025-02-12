@@ -183,9 +183,6 @@ def train_model(model, train_loader, val_loader, optimizer, criterion, device, c
 
                     # 梯度清零
                     optimizer.zero_grad()
-                    
-                    print(batch_data.edge_index.shape)
-                    print(batch_data.egde_index)
 
                     # 前向传播
                     outputs, _ = model(
