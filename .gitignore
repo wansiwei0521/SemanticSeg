@@ -130,3 +130,5 @@ model/
 
 #wandb
 wandb/
+
+results/

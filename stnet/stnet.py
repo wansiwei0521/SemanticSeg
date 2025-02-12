@@ -31,20 +31,28 @@ class GraphEncoder(nn.Module):
         self.convs = nn.ModuleList()
         self.norms = nn.ModuleList()
         
-        self.feat_transform = nn.Linear(config.num_features, config.hidden_dim)
-        self.norms_input = GraphNorm(config.hidden_dim)
+        gnn_output_dim = config.hidden_dim * config.gnn_num_head * config.gnn_query_dim
+        
+        self.feat_encoder = nn.Linear(config.num_features, gnn_output_dim)
+        self.feat_decoder = nn.Linear(gnn_output_dim, config.hidden_dim)
+        self.norms_input = GraphNorm(gnn_output_dim)
+        
 
         for _ in range(config.num_layers):
             self.convs.append(
                 RGATConv(
-                    config.hidden_dim,
-                    config.hidden_dim,
-                    config.num_relations,
-                    edge_dim=config.edge_dim
+                    in_channels=gnn_output_dim,
+                    out_channels=config.hidden_dim,
+                    num_relations=config.num_relations,
+                    edge_dim=config.edge_dim,
+                    heads=config.gnn_num_head,
+                    dim=config.gnn_query_dim,
+                    num_blocks=config.gnn_num_block,
+                    attention_mode=config.gnn_attention_mode,
                 )
             )
-            
-            self.norms.append(GraphNorm(config.hidden_dim))
+            self.norms.append(GraphNorm(gnn_output_dim))
+        
 
         self.pool = SAGPooling(config.hidden_dim, config.pool_ratio)
         self.aggr = SetTransformerAggregation(
@@ -56,14 +64,17 @@ class GraphEncoder(nn.Module):
 
     def forward(self, x, edge_index, edge_attr, batch):
         edge_type = edge_attr.argmax(dim=1) if edge_attr.dim()>1 else edge_attr
-        x = F.leaky_relu(self.feat_transform(x), negative_slope=0.1)
+        x = F.leaky_relu(self.feat_encoder(x), negative_slope=0.1)
         x = self.norms_input(x, batch)
+        
         for _, (conv, norm) in enumerate(zip(self.convs, self.norms)):
             residual = x
             out = conv(x, edge_index, edge_type, edge_attr)  # (N, hidden_dim)
             out = norm(out, batch)  # BatchNorm1d 不需要额外的 batch 索引
             out = F.leaky_relu(out + residual, negative_slope=0.1)
             x = out
+            
+        x = F.leaky_relu(self.feat_decoder(x), negative_slope=0.1)
         
         x, _, _, batch, _, _ = self.pool(x, edge_index, None, batch)
         return self.aggr(x, batch), batch

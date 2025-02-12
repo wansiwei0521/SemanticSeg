@@ -60,6 +60,10 @@ class ModelConfig:
         self.pool_ratio = 0.8
         self.num_seed_points = 4
         self.graph_dropout = 0
+        self.gnn_query_dim = 16
+        self.gnn_num_head = 2
+        self.gnn_num_block = 2
+        self.gnn_attention_mode = 'multiplicative-self-attention'
         
         self.window_size = 30
         self.step_size = 1
