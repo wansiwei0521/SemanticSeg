@@ -183,7 +183,10 @@ class AugmentedScenarioGraphDataset(Dataset):
                 hidden_dim=hidden_dim,
                 window_size=window_size,
                 step_size=step_size,
-                num_classes=num_classes
+                num_classes=num_classes,
+                gnn_query_dim=1,
+                gnn_num_head=1,
+                gnn_num_block=1
             )
             self.generator = SpatioTemporalModel(config).to(device)
             state_dict = torch.load(generator_model_path, map_location=self.device, weights_only=False)
