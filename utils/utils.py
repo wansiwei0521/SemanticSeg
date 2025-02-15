@@ -102,7 +102,7 @@ class SklearnBalancedAccuracy:
         
 def train_model_multigpu(model, train_loader, val_loader, optimizer, criterion, device, config, checkpoint_dir, bestmodel_dir, scene_name, patience=10, record_freq=5):
     """
-    优化后的训练函数，增加了 wandb 记录训练过程
+    优化后的多 GPU 训练函数，在 rank 0 上打印训练进程并记录到 wandb
     
     :param model: 要训练的模型
     :param train_loader: 训练数据加载器
@@ -112,8 +112,10 @@ def train_model_multigpu(model, train_loader, val_loader, optimizer, criterion, 
     :param device: 训练设备
     :param config: 模型配置对象
     :param checkpoint_dir: 检查点保存目录
+    :param bestmodel_dir: 最佳模型保存目录
     :param scene_name: 场景名称
     :param patience: 早停耐心值
+    :param record_freq: 记录频率（每多少个 epoch 记录一次训练指标）
     """
     model.train()
     torch.autograd.set_detect_anomaly(True)
@@ -133,24 +135,7 @@ def train_model_multigpu(model, train_loader, val_loader, optimizer, criterion, 
     checkpoint_path = os.path.join(checkpoint_dir, f"{scene_name}_{config.window_size}_{config.step_size}_{config.num_layers}_{config.hidden_dim}_{config.num_classes}_checkpoint.pth")
     best_model_path = os.path.join(bestmodel_dir, f"{scene_name}_{config.window_size}_{config.step_size}_{config.num_layers}_{config.hidden_dim}_{config.num_classes}_best_model.pth")
 
-    # # 加载现有检查点
-    # if os.path.exists(checkpoint_path):
-    #     checkpoint = torch.load(checkpoint_path)
-    #     model.load_state_dict(checkpoint['model_state_dict'])
-    #     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    #     best_val_metric = checkpoint['best_val_metric']
-    #     start_epoch = checkpoint['epoch'] + 1
-    #     print(f"Loaded checkpoint from epoch {start_epoch}")
-
-    # # 信号处理优化
-    # def _signal_handler(sig, frame):
-    #     print("\nInterrupt received, saving checkpoint...")
-    #     _save_checkpoint(epoch, force_save=True)
-    #     exit(0)
-
-    # signal.signal(signal.SIGINT, _signal_handler)
-
-    # 检查点保存函数
+    # 检查点保存函数，仅在 rank 0 记录
     def _save_checkpoint(current_epoch, force_save=False):
         nonlocal best_val_metric
         checkpoint = {
@@ -160,9 +145,10 @@ def train_model_multigpu(model, train_loader, val_loader, optimizer, criterion, 
             'best_val_metric': best_val_metric,
             'config': vars(config)
         }
-        torch.save(checkpoint, checkpoint_path)
-        if force_save:
-            print(f"Checkpoint saved at epoch {current_epoch}")
+        if dist.get_rank() == 0:
+            torch.save(checkpoint, checkpoint_path)
+            if force_save:
+                print(f"Checkpoint saved at epoch {current_epoch}")
 
     # 训练循环
     try:
@@ -181,7 +167,6 @@ def train_model_multigpu(model, train_loader, val_loader, optimizer, criterion, 
                 if batch_labels.dim() == 0:
                     batch_labels = batch_labels.unsqueeze(0)
 
-                # 梯度清零
                 optimizer.zero_grad()
 
                 # 前向传播
@@ -192,25 +177,22 @@ def train_model_multigpu(model, train_loader, val_loader, optimizer, criterion, 
                     batch_data.batch
                 )
 
-                # 计算损失
                 loss = criterion(outputs, batch_labels)
                 loss = loss ** 2
-                
-                # 反向传播
+
                 loss.backward()
                 nn.utils.clip_grad_norm_(model.parameters(), max_norm=20, norm_type=2)
                 optimizer.step()
-
-                # 更新进度
+                
                 epoch_loss += loss.item()
                 torch.cuda.empty_cache()
             
+            # 同步所有 GPU
             dist.barrier()
-            if device.index == 0:
-                print(f"Epoch {epoch+1}/{config.num_epochs} - Loss: {epoch_loss:.4f}")
 
-            # 验证阶段
-            if device.index == 0:
+            # 只在 rank 0 进行验证、打印和日志记录
+            if dist.get_rank() == 0:
+                print(f"Epoch {epoch+1}/{config.num_epochs} - Loss: {epoch_loss:.4f}")
                 val_metric = evaluate_model(model, val_loader, device, config.num_classes)
                 train_loss = epoch_loss / len(train_loader)
 
@@ -224,12 +206,11 @@ def train_model_multigpu(model, train_loader, val_loader, optimizer, criterion, 
                     epochs_without_improvement += 1
                     if epochs_without_improvement >= patience:
                         print(f"Early stopping triggered at epoch {epoch+1}")
+                        _save_checkpoint(epoch)
                         break
 
-                # 保存检查点
                 _save_checkpoint(epoch)
                 
-                # wandb 记录
                 wandb.log({
                     'epoch': epoch+1,
                     'train_loss': train_loss,
@@ -249,7 +230,6 @@ def train_model_multigpu(model, train_loader, val_loader, optimizer, criterion, 
                     'best_matthews_corrcoef': best_val_metric['matthews_corrcoef']
                 })
                 
-                # 每五个 epoch 验证一次 train_loader 并记录评价指标
                 if (epoch + 1) % record_freq == 0:
                     train_metric = evaluate_model(model, train_loader, device, config.num_classes)
                     wandb.log({
@@ -262,14 +242,19 @@ def train_model_multigpu(model, train_loader, val_loader, optimizer, criterion, 
                         'train_matthews_corrcoef': train_metric['matthews_corrcoef']
                     })
             
+            # 确保所有 GPU 同步后再进入下一 epoch
             dist.barrier()
 
     except KeyboardInterrupt:
-        print("Training interrupted by user")
+        if dist.get_rank() == 0:
+            print("Training interrupted by user")
     finally:
-        print(f"Best validation F1: {best_val_metric['f1']:.4f}")
-        _save_checkpoint(epoch, force_save=True)
-        wandb.finish()
+        if dist.get_rank() == 0:
+            print(f"Best validation F1: {best_val_metric['f1']:.4f}")
+            _save_checkpoint(epoch, force_save=True)
+            wandb.finish()
+        # 同步退出
+        dist.barrier()
     
 def train_model(model, train_loader, val_loader, optimizer, criterion, device, config, checkpoint_dir, bestmodel_dir, scene_name, patience=10, record_freq=5):
     """
