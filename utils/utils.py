@@ -12,6 +12,7 @@ from collections import Counter
 import wandb
 from sklearn.metrics import balanced_accuracy_score
 import torch
+import torch.distributed as dist
 
 
 class ModelConfig:
@@ -98,6 +99,177 @@ class SklearnBalancedAccuracy:
         def compute(self):
             score = balanced_accuracy_score(self.all_labels, self.all_preds)
             return torch.tensor(score)
+        
+def train_model_multigpu(model, train_loader, val_loader, optimizer, criterion, device, config, checkpoint_dir, bestmodel_dir, scene_name, patience=10, record_freq=5):
+    """
+    优化后的训练函数，增加了 wandb 记录训练过程
+    
+    :param model: 要训练的模型
+    :param train_loader: 训练数据加载器
+    :param val_loader: 验证数据加载器
+    :param optimizer: 优化器
+    :param criterion: 损失函数
+    :param device: 训练设备
+    :param config: 模型配置对象
+    :param checkpoint_dir: 检查点保存目录
+    :param scene_name: 场景名称
+    :param patience: 早停耐心值
+    """
+    model.train()
+    torch.autograd.set_detect_anomaly(True)
+    best_val_metric = {
+        'accuracy': 0,
+        'precision': 0,
+        'recall': 0,
+        'f1': 0
+    }
+
+    epochs_without_improvement = 0
+    start_epoch = 0
+
+    # 检查点路径处理
+    os.makedirs(checkpoint_dir, exist_ok=True)
+    os.makedirs(bestmodel_dir, exist_ok=True)
+    checkpoint_path = os.path.join(checkpoint_dir, f"{scene_name}_{config.window_size}_{config.step_size}_{config.num_layers}_{config.hidden_dim}_{config.num_classes}_checkpoint.pth")
+    best_model_path = os.path.join(bestmodel_dir, f"{scene_name}_{config.window_size}_{config.step_size}_{config.num_layers}_{config.hidden_dim}_{config.num_classes}_best_model.pth")
+
+    # # 加载现有检查点
+    # if os.path.exists(checkpoint_path):
+    #     checkpoint = torch.load(checkpoint_path)
+    #     model.load_state_dict(checkpoint['model_state_dict'])
+    #     optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    #     best_val_metric = checkpoint['best_val_metric']
+    #     start_epoch = checkpoint['epoch'] + 1
+    #     print(f"Loaded checkpoint from epoch {start_epoch}")
+
+    # # 信号处理优化
+    # def _signal_handler(sig, frame):
+    #     print("\nInterrupt received, saving checkpoint...")
+    #     _save_checkpoint(epoch, force_save=True)
+    #     exit(0)
+
+    # signal.signal(signal.SIGINT, _signal_handler)
+
+    # 检查点保存函数
+    def _save_checkpoint(current_epoch, force_save=False):
+        nonlocal best_val_metric
+        checkpoint = {
+            'epoch': current_epoch,
+            'model_state_dict': model.state_dict(),
+            'optimizer_state_dict': optimizer.state_dict(),
+            'best_val_metric': best_val_metric,
+            'config': vars(config)
+        }
+        torch.save(checkpoint, checkpoint_path)
+        if force_save:
+            print(f"Checkpoint saved at epoch {current_epoch}")
+
+    # 训练循环
+    try:
+        for epoch in range(start_epoch, config.num_epochs):
+            model.train()
+            epoch_loss = 0
+            
+            for batch_data, batch_labels in train_loader:
+                # 数据预处理
+                if isinstance(batch_data, list):
+                    batch_data = Batch.from_data_list(batch_data).to(device)
+                else:
+                    batch_data = batch_data.to(device)
+                    
+                batch_labels = batch_labels.to(device).squeeze()
+                if batch_labels.dim() == 0:
+                    batch_labels = batch_labels.unsqueeze(0)
+
+                # 梯度清零
+                optimizer.zero_grad()
+
+                # 前向传播
+                outputs, _ = model(
+                    batch_data.x,
+                    batch_data.edge_index,
+                    batch_data.edge_attr,
+                    batch_data.batch
+                )
+
+                # 计算损失
+                loss = criterion(outputs, batch_labels)
+                loss = loss ** 2
+                
+                # 反向传播
+                loss.backward()
+                nn.utils.clip_grad_norm_(model.parameters(), max_norm=20, norm_type=2)
+                optimizer.step()
+
+                # 更新进度
+                epoch_loss += loss.item()
+                torch.cuda.empty_cache()
+            
+            dist.barrier()
+            if device.index == 0:
+                print(f"Epoch {epoch+1}/{config.num_epochs} - Loss: {epoch_loss:.4f}")
+
+            # 验证阶段
+            if device.index == 0:
+                val_metric = evaluate_model(model, val_loader, device, config.num_classes)
+                train_loss = epoch_loss / len(train_loader)
+
+                # 早停机制
+                if val_metric['accuracy'] > best_val_metric['accuracy']:
+                    best_val_metric = val_metric
+                    epochs_without_improvement = 0
+                    torch.save(model.state_dict(), best_model_path)
+                    wandb.run.summary["best_val_f1"] = val_metric['f1']
+                else:
+                    epochs_without_improvement += 1
+                    if epochs_without_improvement >= patience:
+                        print(f"Early stopping triggered at epoch {epoch+1}")
+                        break
+
+                # 保存检查点
+                _save_checkpoint(epoch)
+                
+                # wandb 记录
+                wandb.log({
+                    'epoch': epoch+1,
+                    'train_loss': train_loss,
+                    'val_accuracy': val_metric['accuracy'],
+                    'val_precision': val_metric['precision'],
+                    'val_recall': val_metric['recall'],
+                    'val_f1': val_metric['f1'],
+                    'balanced_accuracy': val_metric['balanced_accuracy'],
+                    'cohen_kappa': val_metric['cohen_kappa'],
+                    'matthews_corrcoef': val_metric['matthews_corrcoef'],
+                    'best_val_accuracy': best_val_metric['accuracy'],
+                    'best_val_precision': best_val_metric['precision'],
+                    'best_val_recall': best_val_metric['recall'],
+                    'best_val_f1': best_val_metric['f1'],
+                    'best_balanced_accuracy': best_val_metric['balanced_accuracy'],
+                    'best_cohen_kappa': best_val_metric['cohen_kappa'],
+                    'best_matthews_corrcoef': best_val_metric['matthews_corrcoef']
+                })
+                
+                # 每五个 epoch 验证一次 train_loader 并记录评价指标
+                if (epoch + 1) % record_freq == 0:
+                    train_metric = evaluate_model(model, train_loader, device, config.num_classes)
+                    wandb.log({
+                        'train_accuracy': train_metric['accuracy'],
+                        'train_precision': train_metric['precision'],
+                        'train_recall': train_metric['recall'],
+                        'train_f1': train_metric['f1'],
+                        'train_balanced_accuracy': train_metric['balanced_accuracy'],
+                        'train_cohen_kappa': train_metric['cohen_kappa'],
+                        'train_matthews_corrcoef': train_metric['matthews_corrcoef']
+                    })
+            
+            dist.barrier()
+
+    except KeyboardInterrupt:
+        print("Training interrupted by user")
+    finally:
+        print(f"Best validation F1: {best_val_metric['f1']:.4f}")
+        _save_checkpoint(epoch, force_save=True)
+        wandb.finish()
     
 def train_model(model, train_loader, val_loader, optimizer, criterion, device, config, checkpoint_dir, bestmodel_dir, scene_name, patience=10, record_freq=5):
     """

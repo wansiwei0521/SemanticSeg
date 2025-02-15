@@ -7,7 +7,7 @@ import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 from torch_geometric.loader import DataLoader
 from stnet.stnet import SpatioTemporalModel
-from utils.utils import ModelConfig, FocalLoss, train_model
+from utils.utils import ModelConfig, train_model_multigpu
 from utils.pyg_dataset import STGraphDataset, MultiGraphData
 from utils.dataset_utils import NODE_TYPE_MAP, EDGE_TYPE_MAP
 
@@ -85,6 +85,7 @@ def run(rank: int, world_size: int):
         val_loader = DataLoader(val_dataset, batch_size=config.batch_size, sampler=val_sampler)
     
         # 初始化模型，并包装为 DDP 模型，启用未使用参数检测
+        torch.manual_seed(12345)
         model = SpatioTemporalModel(config).to(device)
         model = DDP(model, device_ids=[rank], find_unused_parameters=True)
         
@@ -100,7 +101,7 @@ def run(rank: int, world_size: int):
         
         
         # 开始训练
-        train_model(
+        train_model_multigpu(
             model=model,
             train_loader=train_loader,
             val_loader=val_loader,
