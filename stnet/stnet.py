@@ -57,6 +57,8 @@ class GraphEncoder(nn.Module):
         self.pool = SAGPooling(config.hidden_dim, config.pool_ratio)
         self.aggr = SetTransformerAggregation(
             channels=config.hidden_dim,
+            num_encoder_blocks=config.agg_num_encoder_blocks,
+            num_decoder_blocks=config.agg_num_decoder_blocks,
             heads=config.graph_num_head,
             num_seed_points=config.num_seed_points,
             dropout=config.graph_dropout

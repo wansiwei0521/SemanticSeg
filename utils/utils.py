@@ -66,6 +66,9 @@ class ModelConfig:
         self.gnn_num_block = 2
         self.gnn_attention_mode = 'multiplicative-self-attention'
         
+        self.agg_num_encoder_blocks = 2
+        self.agg_num_decoder_blocks = 2
+        
         self.window_size = 30
         self.step_size = 1
         self.lstm_hidden_dim = 32
