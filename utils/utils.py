@@ -285,12 +285,15 @@ def train_model(model, train_loader, val_loader, optimizer, criterion, device, c
 
     epochs_without_improvement = 0
     start_epoch = 0
+    
+    import datetime
+    datetime_str = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
 
     # 检查点路径处理
     os.makedirs(checkpoint_dir, exist_ok=True)
     os.makedirs(bestmodel_dir, exist_ok=True)
     checkpoint_path = os.path.join(checkpoint_dir, f"{scene_name}_{config.window_size}_{config.step_size}_{config.num_layers}_{config.hidden_dim}_{config.num_classes}_checkpoint.pth")
-    best_model_path = os.path.join(bestmodel_dir, f"{scene_name}_{config.window_size}_{config.step_size}_{config.num_layers}_{config.hidden_dim}_{config.num_classes}_best_model.pth")
+    best_model_path = os.path.join(bestmodel_dir, f"{scene_name}_{config.window_size}_{config.step_size}_{config.num_layers}_{config.hidden_dim}_{config.num_classes}_{datetime_str}_best_model.pth")
 
     # # 加载现有检查点
     # if os.path.exists(checkpoint_path):

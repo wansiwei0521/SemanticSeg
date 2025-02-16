@@ -45,7 +45,9 @@ if __name__ == '__main__':
         batch_size=32,
         gnn_query_dim=16,
         gnn_num_head=1,
-        gnn_num_block=8
+        gnn_num_block=8,
+        agg_num_encoder_blocks=4,
+        agg_num_decoder_blocks=4
     )
 
     working_dir = "./"
