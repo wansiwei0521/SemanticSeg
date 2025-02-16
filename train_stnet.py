@@ -20,7 +20,7 @@ if __name__ == '__main__':
     # 滑动窗口配置
     window_size = 30
     step_size = 1
-    num_classes = 7
+    num_classes = 3
 
     # 初始化配置
     config = ModelConfig(
@@ -29,12 +29,12 @@ if __name__ == '__main__':
         hidden_dim=16,
         num_relations=8,
         edge_dim=8,
-        num_epochs=200,
+        num_epochs=100,
         num_classes=num_classes,
         window_size=window_size,
         step_size=step_size,
-        learning_rate=1e-3,
-        weight_decay=1e-4,
+        learning_rate=5e-3,
+        weight_decay=5e-4,
         graph_num_head=4,
         pool_ratio=0.9,
         num_seed_points=4,
@@ -56,13 +56,13 @@ if __name__ == '__main__':
     scene_name = "motor"
     print(f"\n=== Training Scene: {scene_name} ===")
     # initialize wandb
-    wandb.init(project="stnet-train-pygdata", config=config.__dict__)
+    wandb.init(project="stnet-train-pygdata-cls3", config=config.__dict__)
 
     # 加载数据集
     work_dir = r'D:/OneDrive - chd.edu.cn/Desktop/毕业论文数据/code/STNet'
     dataset = STGraphDataset(
         root=os.path.join(work_dir, 'dataset', 'pyg_cache'),
-        pkl_file_path=os.path.join(work_dir, 'dataset', 'cache', 'motor_30_1_7_dataset_aug_cache.pkl')
+        pkl_file_path=os.path.join(work_dir, 'dataset', 'cache', 'motor_30_1_3_dataset_aug_cache.pkl')
     )
     print(f"Dataset: {dataset}")
     print(f"Number of graphs: {len(dataset)}")
@@ -77,11 +77,12 @@ if __name__ == '__main__':
                                                                 generator=torch.Generator().manual_seed(0))
 
     # 创建数据加载器
-    train_loader = DataLoader(train_dataset, batch_size=config.batch_size, shuffle=True, num_workers=4)
-    val_loader = DataLoader(val_dataset, batch_size=config.batch_size, shuffle=False, num_workers=4)
+    train_loader = DataLoader(dataset, batch_size=config.batch_size, shuffle=True, num_workers=8)
+    val_loader = DataLoader(val_dataset, batch_size=config.batch_size, shuffle=False, num_workers=8)
 
     # 模型初始化
     model = SpatioTemporalModel(config).to(device)
+    # model.load_state_dict(torch.load(f"C:/Users/14229/Downloads/motor_30_1_3_16_7_best_model.pth"))
     optimizer = optim.AdamW(model.parameters(), lr=config.learning_rate, weight_decay=config.weight_decay)
     criterion = nn.CrossEntropyLoss(weight=weights.to(device))
     print(f"class weights: {weights}")
@@ -107,5 +108,5 @@ if __name__ == '__main__':
         checkpoint_dir=f"{model_dir}/checkpoint",
         bestmodel_dir=f"{model_dir}/bestmodel",
         scene_name=scene_name,
-        patience=15
+        patience=100
     )

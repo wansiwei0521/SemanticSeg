@@ -108,7 +108,7 @@ class SpatioTemporalModel(nn.Module):
             nn.Linear(config.hidden_dim, config.num_classes)
         )
 
-    def forward(self, x, edge_index, edge_attr, batch):
+    def forward(self, x, edge_index, edge_attr, batch, seq_len=None):
         # 如果 edge_index 的第一维不是2，则尝试进行转置edge_index 的第一维不是2，则尝试进行转置
         if edge_index.dim() == 2 and edge_index.size(0) != 2:
             edge_index = edge_index.t().contiguous()
@@ -116,7 +116,8 @@ class SpatioTemporalModel(nn.Module):
         graph_feats, batch = self.graph_encoder(x, edge_index, edge_attr, batch)
         
         # 时序重组
-        seq_len = self.config.window_size
+        if seq_len is None:
+            seq_len = self.config.window_size
         batch_size = graph_feats.shape[0] // seq_len
         temporal_feats = graph_feats.view(batch_size, seq_len, -1)
         
