@@ -33,21 +33,19 @@ if __name__ == '__main__':
         num_classes=num_classes,
         window_size=window_size,
         step_size=step_size,
-        learning_rate=5e-3,
-        weight_decay=5e-4,
         graph_num_head=4,
         pool_ratio=0.9,
-        num_seed_points=4,
-        lstm_hidden_dim=32,
+        num_seed_points=2,
+        lstm_hidden_dim=16,
         lstm_bidirectional=False,
         lstm_num_layers=1,
         fc_dropout=0.3,
         batch_size=32,
-        gnn_query_dim=16,
+        gnn_query_dim=8,
         gnn_num_head=1,
-        gnn_num_block=8,
-        agg_num_encoder_blocks=4,
-        agg_num_decoder_blocks=4
+        gnn_num_block=4,
+        agg_num_encoder_blocks=2,
+        agg_num_decoder_blocks=2
     )
 
     working_dir = "./"

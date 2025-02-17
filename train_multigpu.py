@@ -45,6 +45,7 @@ def get_args():
     parser.add_argument("--model_dir", type=str, default="model", help="Directory to save models")
     # 其他训练设置
     parser.add_argument("--patience", type=int, default=15, help="Training patience for early stopping")
+    parser.add_argument("--key", type=str, default="", help="Wandb API key")
     return parser.parse_args()
 
 def run(rank: int, world_size: int, args):
@@ -153,7 +154,7 @@ def run(rank: int, world_size: int, args):
 if __name__ == '__main__':
     args = get_args()
     import wandb
-    wandb.login(key="b11e2943a6b14159c3d02d1c25297fadab22e7af")
+    wandb.login(key=args.key)
     sys.path.append('/kaggle/working/stnet')
     world_size = torch.cuda.device_count()
     mp.spawn(run, args=(world_size, args), nprocs=world_size, join=True)
